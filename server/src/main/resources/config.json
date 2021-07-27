@@ -1,0 +1,27 @@
+{
+  "web": {
+    "port": 8080,
+    "router": {
+      "enable": false,
+      "file": "/Volumes/Vm/Project/self/Java/vertx-base/src/main/resources/Route.json"
+    }
+  },
+  "serviceScanPackages": [
+    "web.controller",
+    "web.config",
+    "web.domain.impl"
+  ],
+  "serviceAddress": "service",
+  "dbSetting": {
+    "type": "PostgreSql",
+    "host": "127.0.0.1",
+    "port": 5432,
+    "username": "app",
+    "password": "123!",
+    "database": "demo",
+    "flyway": {
+      "enable": false
+    }
+  },
+  "eventLoopPoolSize": 50
+}

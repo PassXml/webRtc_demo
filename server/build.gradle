@@ -1,0 +1,185 @@
+import org.jooq.codegen.GenerationTool
+import org.jooq.meta.jaxb.*
+
+buildscript {
+    repositories {
+        mavenLocal()
+        mavenCentral()
+    }
+    ext {
+        postgresqlVertsion = "42.2.14"
+        JooqVertxVersion = "6.3.0"
+        vertxVersion = '4.1.0'
+        db_url = "jdbc:postgresql://localhost:5432/demo"
+        db_user = "postgres"
+        db_password = "123"
+        out_path = "/Volumes/RamDisk/Caches/demo"
+    }
+    dependencies {
+        //生成数据库文件必须设置成classpath
+        classpath "org.postgresql:postgresql:$postgresqlVertsion"
+        classpath "io.github.jklingsporn:vertx-jooq-generate:$JooqVertxVersion"
+        classpath "org.start2do:codeGen:1.0-SNAPSHOT"
+    }
+}
+plugins {
+    id 'java'
+    id 'org.jetbrains.kotlin.jvm' version '1.5.20'
+    id "org.jetbrains.kotlin.kapt" version "1.5.20"
+//    id 'org.jetbrains.kotlin.plugin.lombok' version '1.5.20-RC'
+//    id 'io.freefair.lombok' version '5.3.0'
+    id 'application'
+    id "com.github.johnrengelman.shadow" version "5.2.0"
+}
+
+group 'org.start2do'
+version '1.0-SNAPSHOT'
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+}
+
+
+dependencies {
+    implementation("org.start2do:vertx-core:1.0-SNAPSHOT")
+    implementation("org.start2do:vertx-db:1.0-SNAPSHOT")
+    implementation("org.start2do:vertx-web:1.0-SNAPSHOT")
+    implementation("org.start2do:vertx-core-api:1.0-SNAPSHOT")
+    implementation("org.start2do:codeGen:1.0-SNAPSHOT")
+
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.7.0'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.7.0'
+//    //WEB支持
+//    kapt "io.vertx:vertx-web-api-service:$vertxVersion"
+//    implementation("io.vertx:vertx-auth-jwt:$vertxVersion")
+//    //KAPT 支持
+    kapt "io.vertx:vertx-codegen:$vertxVersion:processor"
+    annotationProcessor "io.vertx:vertx-codegen:$vertxVersion:processor"
+    implementation "io.vertx:vertx-codegen:$vertxVersion"
+
+    kapt "io.vertx:vertx-service-proxy:$vertxVersion"
+    annotationProcessor "io.vertx:vertx-service-proxy:$vertxVersion"
+
+
+    kapt 'org.projectlombok:lombok:1.18.12'
+    compileOnly 'org.projectlombok:lombok:1.18.12'
+    annotationProcessor 'org.projectlombok:lombok:1.18.12'
+//    //代码生成
+//    compile group: 'io.vertx', name: 'vertx-lang-kotlin-gen', version: vertxVersion
+//    //Postgresql
+    implementation group: 'io.vertx', name: 'vertx-pg-client', version: vertxVersion
+    implementation group: 'org.postgresql', name: 'postgresql', version: postgresqlVertsion
+    compile "org.start2do:utils:0.0.1-SNAPSHOT"
+
+}
+
+test {
+    useJUnitPlatform()
+}
+
+sourceSets {
+    main {
+        //if you truly want to override the defaults:
+        output.resourcesDir = file(out_path)
+        // Compiled Java classes should use this directory
+        java {
+            outputDir = file(out_path)
+            srcDirs "src/main/generated"
+        }
+    }
+}
+compileKotlin {
+    kotlinOptions {
+        jvmTarget = "11"
+    }
+}
+compileTestKotlin {
+    kotlinOptions {
+        jvmTarget = "11"
+    }
+}
+
+//App 插件所需要配置的
+def launcherClassName = "org.start2do.vertx.Launcher"
+def mainVerticleName = "org.start2do.vertx.MainVerticle"
+
+application {
+    mainClassName = launcherClassName
+}
+task remveoCache {
+    FileTree tree = fileTree("/Volumes/RamDisk/Caches/demo")
+    tree.visit {
+        element ->
+            delete element.file
+    }
+}
+run {
+    dependsOn remveoCache
+    args = [
+            "run",
+            mainVerticleName,
+            "--launcher-class=$launcherClassName",
+            "vertx.clusterManagerFactory=io.vertx.spi.cluster.ignite.IgniteClusterManager",
+            "vertx.logger-delegate-factory-class-name=io.vertx.core.logging.Log4j2LogDelegateFactory",
+    ]
+}
+task genericIntegrationJar(type: com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar) {
+    shadowJar {
+        archiveClassifier.set("fat")
+        manifest {
+            attributes("Main-Verticle": mainVerticleName)
+        }
+        exclude "hotswap-agent.properties"
+        exclude "*.docx"
+        mergeServiceFiles {
+            include "META-INF/services/io.vertx.core.spi.VerticleFactory"
+            include "META-INF/spring.*"
+            include "db/migration/*.profile"
+        }
+    }
+}
+//生成数据库文件
+task jooqGenerate {
+    doLast() {
+        print("生成路径:${projectDir}/src/main/generated")
+        GenerationTool.generate(new Configuration()
+                .withJdbc(new Jdbc()
+                        .withDriver('org.postgresql.Driver')
+                        .withUrl(db_url)
+                        .withUser(db_user)
+                        .withPassword(db_password))
+                .withGenerator(new Generator()
+                        .withName("org.start2do.vertx.db.ClassicReactiveVertxGeneratorWithDataObjectSupport")
+                        .withDatabase(
+                                new Database()
+                                        .withSchemata(
+                                                new SchemaMappingType().withInputSchema("public")
+                                        )
+                                        .withIncludes(".*")
+                                        .withExcludes("schema_vertsion")
+                                        .withIncludeTables(true)
+                                        .withIncludePackages(false)
+                                        .withIncludeUDTs(false)
+                                        .withIncludeSequences(false)
+                                        .withIncludeIndexes(false)
+                        )
+                        .withGenerate(new Generate()
+                                .withPojos(true)
+                                .withDaos(true)
+                                .withRecords(true)
+                                .withJavaTimeTypes(true)
+                                .withInterfaces(false)
+                                .withDeprecated(false)
+                        )
+                        .withTarget(new Target()
+                                .withPackageName('org.start2do.vertx.db.entity')
+                                .withDirectory("${projectDir}/src/main/generated")
+                        ).withStrategy(new Strategy()
+                        .withName("io.github.jklingsporn.vertx.jooq.generate.VertxGeneratorStrategy")
+                ))
+        )
+    }
+
+}
+
